@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#080b13" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f4f6fb" media="(prefers-color-scheme: light)">
+  <title>QUOTEX1 Dashboard</title>
+  <!-- Apply saved theme before CSS renders to prevent flash -->
+  <script>(function(){var t=localStorage.getItem('qx1-theme');if(t)document.documentElement.dataset.theme=t;})()</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- ── Header ───────────────────────────────────────── -->
+  <header class="header">
+    <div class="header-logo">QUOTEX<span>1</span></div>
+    <div class="header-status stopped" id="header-status">
+      <div class="status-dot"></div>STOPPED
+    </div>
+    <div class="header-spacer"></div>
+    <!-- Connection badges (hidden on tablet/mobile via CSS) -->
+    <div class="header-conn-badges">
+      <span class="conn-badge disconnected" id="tg-badge-hdr">
+        <div class="status-dot"></div>Telegram
+      </span>
+      <span class="conn-badge disconnected" id="qx-badge-hdr">
+        <div class="status-dot"></div>Quotex
+      </span>
+    </div>
+    <!-- Theme toggle -->
+    <button class="btn-theme" id="btn-theme" title="Toggle light / dark mode" aria-label="Toggle theme">
+      <span id="theme-icon">☀</span>
+    </button>
+  </header>
+
+  <!-- ── Tabs ─────────────────────────────────────────── -->
+  <nav class="tabs">
+    <div class="tab active" data-tab="dashboard">Dashboard</div>
+    <div class="tab"        data-tab="settings">Settings</div>
+  </nav>
+
+  <!-- ════════════════════════════════════════════════════ -->
+  <!-- DASHBOARD PAGE                                       -->
+  <!-- ════════════════════════════════════════════════════ -->
+  <div class="content">
+    <div class="page active" id="page-dashboard">
+
+      <!-- Alert banner -->
+      <div class="alert-banner" id="alert-banner">
+        <span class="alert-icon">⚠</span>
+        <span id="alert-text"></span>
+        <span class="alert-close">✕</span>
+      </div>
+
+      <!-- Start / Stop button -->
+      <div class="bot-control">
+        <div class="control-label">Bot Control</div>
+        <button class="btn-toggle" id="btn-toggle">
+          <div class="btn-icon">▶</div>
+          <div class="btn-text">START</div>
+        </button>
+        <div class="text-dim" id="bot-status-text" style="font-size:12px;">Click START to launch the bot</div>
+      </div>
+
+      <!-- Metrics -->
+      <div class="metrics">
+        <div class="metric-card blue">
+          <div class="metric-label">Balance <span class="acct-badge" id="acct-badge">DEMO</span></div>
+          <div class="metric-value" id="metric-balance">—</div>
+          <div class="metric-sub" id="metric-balance-sub">Connect Quotex to see your balance</div>
+        </div>
+
+        <div class="metric-card yellow">
+          <div class="metric-label">P&amp;L Today</div>
+          <div class="metric-value" id="metric-pnl">$0.00</div>
+          <div class="metric-sub" id="metric-pnl-sub">Realized daily P&amp;L</div>
+        </div>
+
+        <div class="metric-card green">
+          <div class="metric-label">Win Rate</div>
+          <div class="metric-value" id="metric-winrate">—</div>
+          <div class="metric-sub" id="metric-winrate-sub">No settled trades yet</div>
+        </div>
+
+        <div class="metric-card blue">
+          <div class="metric-label">Daily Trades</div>
+          <div class="metric-value" id="metric-trades">0</div>
+          <div class="metric-sub" id="metric-trades-sub">today</div>
+          <div class="metric-bar"><span id="bar-trades"></span></div>
+        </div>
+
+        <div class="metric-card red">
+          <div class="metric-label">Daily Loss</div>
+          <div class="metric-value" id="metric-loss">$0.00</div>
+          <div class="metric-sub" id="metric-loss-sub">Limit disabled</div>
+          <div class="metric-bar"><span id="bar-loss" class="is-red"></span></div>
+        </div>
+
+        <div class="metric-card green">
+          <div class="metric-label">In Flight</div>
+          <div class="metric-value" id="metric-signals">0</div>
+          <div class="metric-sub" id="metric-signals-sub">scheduled &amp; live trades</div>
+        </div>
+      </div>
+
+      <!-- Upcoming entries -->
+      <div class="section-title">Upcoming Entries</div>
+      <div class="queue" id="queue">
+        <div class="queue-empty">No signals scheduled — waiting for the next channel message.</div>
+      </div>
+
+      <!-- Last trade -->
+      <div class="section-title">Last Trade</div>
+      <div class="last-trade" id="last-trade">
+        <div class="queue-empty">No trades placed yet.</div>
+      </div>
+
+      <!-- Activity log -->
+      <div class="section-title">
+        Activity Log
+        <button class="btn btn-ghost btn-sm" id="btn-download-log" title="Download the full log file">⭳ Download</button>
+        <button class="btn btn-ghost btn-sm" id="btn-clear-log" title="Clear the view (the log file is untouched)">Clear</button>
+      </div>
+      <div class="log-panel" id="log-panel">
+        <div class="log-entry">
+          <span class="log-time">--:--:--</span>
+          <span class="log-msg text-dim">Waiting for bot to start...</span>
+        </div>
+      </div>
+
+    </div><!-- /page-dashboard -->
+
+
+    <!-- ══════════════════════════════════════════════════ -->
+    <!-- SETTINGS PAGE                                      -->
+    <!-- ══════════════════════════════════════════════════ -->
+    <div class="page" id="page-settings">
+
+      <!-- Connections -->
+      <div class="settings-section">
+        <div class="settings-section-header">Connections</div>
+        <div class="settings-body">
+
+          <!-- Telegram -->
+          <div class="conn-row">
+            <div class="conn-icon">✈</div>
+            <div class="conn-info">
+              <div class="conn-name">Telegram</div>
+              <div class="conn-detail">Receives signals from your channels</div>
+            </div>
+            <div class="conn-badge disconnected" id="tg-badge">
+              <div class="status-dot"></div>Offline
+            </div>
+            <button class="btn btn-ghost btn-sm" id="btn-tg-connect">Connect</button>
+          </div>
+
+          <!-- Quotex -->
+          <div class="conn-row">
+            <div class="conn-icon">📈</div>
+            <div class="conn-info">
+              <div class="conn-name">Quotex</div>
+              <div class="conn-detail">Logs in via Quotex API — no browser required</div>
+            </div>
+            <div class="conn-badge disconnected" id="qx-badge">
+              <div class="status-dot"></div>Offline
+            </div>
+            <button class="btn btn-ghost btn-sm" id="btn-qx-connect">Connect</button>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Telegram API -->
+      <div class="settings-section">
+        <div class="settings-section-header">Telegram API</div>
+        <div class="settings-body">
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">API ID</label>
+              <input class="form-input" id="s-api-id" type="number" placeholder="20068122">
+            </div>
+            <div class="form-group">
+              <label class="form-label">API Hash</label>
+              <input class="form-input" id="s-api-hash" type="text" placeholder="28a2c1b0...">
+            </div>
+          </div>
+
+          <div class="divider"></div>
+          <div class="section-title mb-8">Signal Channels</div>
+          <div class="channel-list" id="channel-list"></div>
+          <button class="btn btn-ghost btn-sm" onclick="addChannel()">+ Add Channel</button>
+        </div>
+      </div>
+
+      <!-- Trading -->
+      <div class="settings-section">
+        <div class="settings-section-header">Trading</div>
+        <div class="settings-body">
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">Account Type</label>
+              <select class="form-select" id="s-account-type">
+                <option value="demo">Demo (Practice)</option>
+                <option value="live">Live (Real)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Risk Mode</label>
+              <select class="form-select" id="s-risk-mode">
+                <option value="fixed">Fixed Amount ($)</option>
+                <option value="percent">% of Balance</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" id="lbl-risk-amount">Risk Amount ($)</label>
+              <input class="form-input" id="s-risk-amount" type="number" min="0.01" step="0.01" placeholder="1.00">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Max Daily Trades</label>
+              <input class="form-input" id="s-max-trades" type="number" min="1" placeholder="10">
+            </div>
+            <div class="form-group">
+              <label class="form-label" id="lbl-max-loss">Max Daily Loss ($)</label>
+              <input class="form-input" id="s-max-loss" type="number" min="0" placeholder="50">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Max Concurrent Trades</label>
+              <input class="form-input" id="s-max-concurrent" type="number" min="1" placeholder="1">
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div class="toggle-row">
+            <span class="toggle-label">Enforce Max Daily Loss limit</span>
+            <label class="toggle">
+              <input type="checkbox" id="s-max-loss-enabled">
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Martingale -->
+      <div class="settings-section">
+        <div class="settings-section-header">Martingale</div>
+        <div class="settings-body">
+          <div class="toggle-row">
+            <span class="toggle-label">Enable Martingale (recover on the same pair only — never carried to the next signal)</span>
+            <label class="toggle">
+              <input type="checkbox" id="s-martingale-enabled">
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+          <div id="martingale-fields" style="display:none" class="mt-16">
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label">Multiplier (e.g. 2 = double)</label>
+                <input class="form-input" id="s-martingale-mult" type="number" min="1.1" step="0.1" placeholder="2.0">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Steps (trades per signal, same pair)</label>
+                <input class="form-input" id="s-martingale-steps" type="number" min="1" placeholder="2">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quotex Account -->
+      <div class="settings-section">
+        <div class="settings-section-header">Quotex Account</div>
+        <div class="settings-body">
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">Email</label>
+              <input class="form-input" id="s-qx-email" type="email" placeholder="you@example.com" autocomplete="off">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Password</label>
+              <input class="form-input" id="s-qx-password" type="password" placeholder="Your Quotex password" autocomplete="off">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Entry Lead (sec)</label>
+              <input class="form-input" id="s-early-entry" type="number" min="0" max="5" step="0.1" placeholder="0.5">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Late Entry Grace (sec)</label>
+              <input class="form-input" id="s-late-grace" type="number" min="0" max="60" step="0.5" placeholder="5">
+            </div>
+          </div>
+          <div class="modal-info" style="margin-top:12px;">
+            <b>Entry Lead</b> compensates for order latency only — trades run for a fixed
+            duration from the fill, so the order should land <i>on</i> the entry second.
+            Match it to the "fill latency" figure in the Activity Log (typically 0.3&ndash;1.0s).
+            <br><br>
+            <b>Late Entry Grace</b> — if the order cannot be sent within this many seconds
+            of that moment, the signal is dropped rather than entered late.
+            <br><br>
+            Credentials are saved here and used by the bot automatically. On Railway, you can override with
+            <code>QUOTEX_EMAIL</code> and <code>QUOTEX_PASSWORD</code> environment variables.
+          </div>
+        </div>
+      </div>
+
+      <!-- Logging -->
+      <div class="settings-section">
+        <div class="settings-section-header">Logging</div>
+        <div class="settings-body">
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">Log Level</label>
+              <select class="form-select" id="s-log-level">
+                <option value="DEBUG">DEBUG</option>
+                <option value="INFO">INFO</option>
+                <option value="WARNING">WARNING</option>
+                <option value="ERROR">ERROR</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Log File</label>
+              <input class="form-input" id="s-log-file" type="text" placeholder="quotex_bot.log">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:flex-end;padding-bottom:40px;">
+        <button class="btn btn-primary" id="btn-save" onclick="saveSettings()" style="padding:10px 32px;font-size:14px;">
+          Save Settings
+        </button>
+      </div>
+
+    </div><!-- /page-settings -->
+  </div><!-- /content -->
+</div><!-- /app -->
+
+
+<!-- ── Telegram Auth Modal ─────────────────────────────── -->
+<div class="modal-overlay" id="modal-telegram">
+  <div class="modal">
+    <button class="modal-close">✕</button>
+    <div class="modal-title">Connect Telegram</div>
+    <div class="modal-subtitle">Sign in with your Telegram account to receive signals</div>
+
+    <!-- Step 1: Phone -->
+    <div class="modal-step active" id="step-phone">
+      <div class="form-group">
+        <label class="form-label">Phone Number (with country code)</label>
+        <input class="form-input" id="tg-phone" type="tel" placeholder="12342342345" autofocus>
+      </div>
+      <div class="modal-info">
+        Include your country code (e.g. <code>1</code> for the US → <code>12342342345</code>).
+        Any format works — spaces, dashes, brackets or a leading <code>+</code> are fine.
+        Telegram will send a verification code to this number.
+        Your API credentials must already be saved in Settings.
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal('modal-telegram')">Cancel</button>
+        <button class="btn btn-primary" id="btn-tg-send-code">Send Code</button>
+      </div>
+    </div>
+
+    <!-- Step 2: Code -->
+    <div class="modal-step" id="step-code">
+      <div class="form-group">
+        <label class="form-label">Verification Code</label>
+        <input class="form-input" id="tg-code" type="text" placeholder="12345" maxlength="6"
+               style="font-family:var(--font-mono);letter-spacing:4px;font-size:20px;text-align:center;">
+      </div>
+      <div class="modal-info">
+        Check your Telegram app or SMS for a 5-digit code.
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="showTgStep('step-phone')">← Back</button>
+        <button class="btn btn-primary" id="btn-tg-verify">Verify</button>
+      </div>
+    </div>
+
+    <!-- Step 3: 2FA Password -->
+    <div class="modal-step" id="step-password">
+      <div class="form-group">
+        <label class="form-label">Two-Factor Auth Password</label>
+        <input class="form-input" id="tg-password" type="password" placeholder="Your 2FA password">
+      </div>
+      <div class="modal-info">Your account has two-factor authentication enabled.</div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal('modal-telegram')">Cancel</button>
+        <button class="btn btn-primary" id="btn-tg-password">Submit</button>
+      </div>
+    </div>
+
+    <!-- Step 4: Success -->
+    <div class="modal-step" id="step-success">
+      <div class="modal-success">
+        <div class="success-icon">✅</div>
+        <div class="modal-title text-green">Connected!</div>
+        <p>Telegram session saved. The bot can now receive signals.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ── Quotex Connect Modal ────────────────────────────── -->
+<div class="modal-overlay" id="modal-quotex">
+  <div class="modal">
+    <button class="modal-close">✕</button>
+    <div class="modal-title">Connect Quotex</div>
+    <div class="modal-subtitle">Enter your Quotex account credentials</div>
+
+    <!-- Step 1: Credentials form -->
+    <div class="modal-step active" id="qx-step-form">
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input class="form-input" id="qx-email" type="email" placeholder="you@example.com" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <input class="form-input" id="qx-password" type="password" placeholder="Your Quotex password" autocomplete="current-password">
+      </div>
+      <div class="modal-info">
+        Credentials are saved to <code>config.json</code> and used by the bot to log in via the Quotex API — no browser needed.
+        On Railway, you can also set <code>QUOTEX_EMAIL</code> and <code>QUOTEX_PASSWORD</code> as environment variables instead.
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal('modal-quotex')">Cancel</button>
+        <button class="btn btn-primary" id="btn-qx-save">Connect</button>
+      </div>
+    </div>
+
+    <!-- Step 2: Testing connection -->
+    <div class="modal-step" id="qx-step-testing">
+      <div class="browser-status">
+        <div class="browser-spinner"><div class="spinner" style="border-color:rgba(0,230,118,0.2);border-top-color:var(--green);"></div></div>
+        <p style="margin-top:12px;">Verifying credentials with Quotex…</p>
+      </div>
+    </div>
+
+    <!-- Step 2b: PIN / OTP required -->
+    <div class="modal-step" id="qx-step-pin">
+      <div class="form-group">
+        <label class="form-label">Email Verification PIN</label>
+        <input class="form-input" id="qx-pin" type="text" inputmode="numeric"
+               placeholder="Enter the PIN sent to your email"
+               maxlength="8"
+               style="font-family:var(--font-mono);letter-spacing:6px;font-size:22px;text-align:center;">
+      </div>
+      <div class="modal-info">
+        Quotex sent a verification PIN to your email address.
+        Check your inbox and enter it above.
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal('modal-quotex')">Cancel</button>
+        <button class="btn btn-primary" id="btn-qx-pin">Submit PIN</button>
+      </div>
+    </div>
+
+    <!-- Step 3: Success -->
+    <div class="modal-step" id="qx-step-success">
+      <div class="modal-success">
+        <div class="success-icon">✅</div>
+        <div class="modal-title text-green">Connected!</div>
+        <p>Quotex credentials saved. The bot will use these to log in automatically.</p>
+      </div>
+    </div>
+
+    <!-- Step 4: Failed -->
+    <div class="modal-step" id="qx-step-failed">
+      <div class="browser-status">
+        <div class="browser-icon" style="color:var(--red)">✗</div>
+        <p class="text-red" id="quotex-error-msg">Login failed.</p>
+        <p style="margin-top:8px;color:var(--text-dim);">Check your email and password and try again.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="showQxStep('qx-step-form')">← Back</button>
+        <button class="btn btn-ghost" onclick="closeModal('modal-quotex')">Close</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
