@@ -429,9 +429,37 @@
         Credentials are saved to <code>config.json</code> and used by the bot to log in via the Quotex API — no browser needed.
         On Railway, you can also set <code>QUOTEX_EMAIL</code> and <code>QUOTEX_PASSWORD</code> as environment variables instead.
       </div>
+      <div style="text-align:center;margin:12px 0 6px;">
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-qx-show-manual" style="font-size:12px;color:var(--blue);">
+          ⚡ Or import session cookies & token directly
+        </button>
+      </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="closeModal('modal-quotex')">Cancel</button>
         <button class="btn btn-primary" id="btn-qx-save">Connect</button>
+      </div>
+    </div>
+
+    <!-- Step 1b: Manual session import (ideal if server IP is geo-blocked by Cloudflare) -->
+    <div class="modal-step" id="qx-step-manual">
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input class="form-input" id="qx-man-email" type="email" placeholder="you@example.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Token (SSID)</label>
+        <input class="form-input" id="qx-man-token" type="text" placeholder="e.g. xSYSxZc1FRQWrSUrXDCn8NSwHGCIkiObGRfuOJbb">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Cookies</label>
+        <textarea class="form-input" id="qx-man-cookies" rows="3" placeholder="remember_web_...; laravel_session=...; __cf_bm=..."></textarea>
+      </div>
+      <div class="modal-info">
+        If your cloud server/VPS IP is geo-blocked or challenged by Cloudflare, you can export your cookies & token from your personal browser (Developer Tools → Application / Storage) and paste them here.
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="showQxStep('qx-step-form')">← Back</button>
+        <button class="btn btn-primary" id="btn-qx-save-manual">Import &amp; Connect</button>
       </div>
     </div>
 

@@ -89,6 +89,7 @@ class QuotexHandler:
         self.martingale_cycle: int = 1   # 2-step 2-cycle Martingale (Cycle 1: Trades 1 & 2, Cycle 2: Trades 3 & 4)
         self._trade_date = None
         self._day_start_balance: Optional[float] = None   # balance snapshot at 00:00
+        self.last_error: Optional[str] = None             # detailed reason for connection failure
         # The day's counters are persisted, so restarting the bot mid-day does
         # NOT hand you a fresh set of limits. Loaded per account type.
         self._load_daily_state()
@@ -153,34 +154,43 @@ class QuotexHandler:
                         break
 
             if not check:
-                # Still failing — likely a stale/rejected WebSocket token.
-                # Clear just the token from session.json so pyquotex fetches a fresh one.
-                # Cookies are preserved so HTTP re-login is silent (no PIN needed).
+                # Direct HTTP login or cached token failed.
+                # Launch the browser authenticator (undetected_chromedriver) to solve Cloudflare Turnstile,
+                # grab the fresh session cookies and token, and save to session.json.
                 self.logger.info(
-                    "Clearing stale WebSocket token and retrying in 5 s "
-                    "(rate-limit cooldown)..."
+                    "Direct authentication failed or token expired. "
+                    "Launching browser authenticator to bypass Cloudflare and refresh session..."
                 )
-                self._clear_session_token(email)
-                await asyncio.sleep(5)
-
-                # Re-create the client so it reads the updated session file
-                await self._retire_client()
-                self.client = Quotex(
+                from .browser_auth import async_login_with_browser
+                browser_ok, browser_msg = await async_login_with_browser(
                     email=email,
                     password=password,
                     host=host,
-                    on_otp_callback=otp_callback,
+                    otp_callback=otp_callback,
                 )
-                check, reason = await self.client.connect()
-
-                if not check:
-                    for _ in range(8):
-                        await asyncio.sleep(1)
-                        if await self.client.check_connect():
-                            check = True
-                            break
+                if browser_ok:
+                    self.logger.info("Browser authentication succeeded! Reconnecting Quotex headless client with fresh session...")
+                    await self._retire_client()
+                    self.client = Quotex(
+                        email=email,
+                        password=password,
+                        host=host,
+                        on_otp_callback=otp_callback,
+                    )
+                    check, reason = await self.client.connect()
+                    if not check:
+                        for _ in range(8):
+                            await asyncio.sleep(1)
+                            if await self.client.check_connect():
+                                check = True
+                                break
+                else:
+                    self.last_error = browser_msg
+                    self.logger.error(f"Browser authentication failed: {browser_msg}")
+                    return False
 
             if not check:
+                self.last_error = f"Quotex login failed: {reason}"
                 self.logger.error(f"Quotex login failed: {reason}")
                 return False
 

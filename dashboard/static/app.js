@@ -510,6 +510,36 @@ $('btn-qx-save')?.addEventListener('click', async () => {
   });
 });
 
+// Show manual session import form
+$('btn-qx-show-manual')?.addEventListener('click', () => {
+  showQxStep('qx-step-manual');
+  setValue('qx-man-email', $('qx-email')?.value || $('s-qx-email')?.value || '');
+});
+
+// Handle manual session import (cookies + token)
+$('btn-qx-save-manual')?.addEventListener('click', async () => {
+  const email   = ($('qx-man-email')?.value || '').trim();
+  const token   = ($('qx-man-token')?.value || '').trim();
+  const cookies = ($('qx-man-cookies')?.value || '').trim();
+
+  if (!email)   { showFieldError('qx-man-email',   'Enter your Quotex email'); return; }
+  if (!token)   { showFieldError('qx-man-token',   'Enter your session token (SSID)'); return; }
+  if (!cookies) { showFieldError('qx-man-cookies', 'Paste your cookies string'); return; }
+
+  setBtnBusy('btn-qx-save-manual', true, 'Connecting…');
+  showQxStep('qx-step-testing');
+
+  const res = await api('POST', '/api/quotex/session', { email, token, cookies });
+  setBtnBusy('btn-qx-save-manual', false, 'Import & Connect');
+
+  if (res.success) {
+    _onQxConnected(email, '');
+  } else {
+    $('quotex-error-msg').textContent = res.message || 'Session verification failed.';
+    showQxStep('qx-step-failed');
+  }
+});
+
 // SocketIO: Quotex requests a PIN from the user's email
 socket.on('quotex_otp_required', d => {
   showQxStep('qx-step-pin');
@@ -556,9 +586,11 @@ function _onQxConnected(email, password) {
     // to mirror into the Settings fields, and blanking them would be wrong.
     return;
   }
-  setValue('s-qx-email',    email);
-  setValue('s-qx-password', password);
-  _loadedConfig.quotex = { ...(_loadedConfig.quotex || {}), email, password };
+  if (email) setValue('s-qx-email', email);
+  if (password) setValue('s-qx-password', password);
+  _loadedConfig.quotex = { ...(_loadedConfig.quotex || {}) };
+  if (email) _loadedConfig.quotex.email = email;
+  if (password) _loadedConfig.quotex.password = password;
   setTimeout(() => closeModal('modal-quotex'), 2000);
 }
 

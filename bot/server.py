@@ -795,12 +795,13 @@ def quotex_connect():
         if await handler.connect(otp_callback=_make_otp_callback()):
             _shared_quotex = handler         # KEEP it alive for the bot to adopt
             return True, ""
+        err = getattr(handler, "last_error", None) or "Login failed — check your email/password."
         await handler.disconnect()
         _shared_quotex = None
-        return False, "Login failed — check your email/password."
+        return False, err
 
     try:
-        # Generous timeout: the user may need minutes to fetch the emailed PIN.
+        # Generous timeout: browser authenticator or email PIN may take a couple minutes.
         ok, message = run_sync(_connect(), timeout=600)
     except Exception as e:
         _patch_state({"quotex_connected": False})
@@ -829,6 +830,56 @@ def quotex_pin():
     # The future belongs to the shared loop — resolve it from that loop's thread.
     _runtime().call_soon_threadsafe(lambda: fut.done() or fut.set_result(pin))
     return jsonify({"success": True})
+
+
+@app.route("/api/quotex/session", methods=["POST"])
+def quotex_session_import():
+    """Import a session (cookies + token) directly into session.json and connect."""
+    data = request.get_json(force=True)
+    email = (data.get("email") or "").strip()
+    cookies = (data.get("cookies") or "").strip()
+    token = (data.get("token") or "").strip()
+
+    if not email or not cookies or not token:
+        return jsonify({"success": False, "message": "Email, cookies, and token are required."}), 400
+
+    from bot.browser_auth import save_session_data
+    user_agent = data.get("user_agent") or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    if not save_session_data(email, cookies, token, user_agent):
+        return jsonify({"success": False, "message": "Failed to save session.json."}), 500
+
+    cfg = _read_json(CONFIG_FILE)
+    cfg.setdefault("quotex", {})["email"] = email
+    try:
+        CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        CONFIG_FILE.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+    async def _test():
+        global _shared_quotex
+        from bot.config import Config
+        from bot.quotex_handler import QuotexHandler
+        handler = QuotexHandler(Config(str(CONFIG_FILE)))
+        if await handler.connect():
+            _shared_quotex = handler
+            return True, ""
+        await handler.disconnect()
+        _shared_quotex = None
+        return False, getattr(handler, "last_error", "Session invalid or rejected by Quotex.")
+
+    try:
+        ok, msg = run_sync(_test(), timeout=30)
+    except Exception as e:
+        return jsonify({"success": False, "message": f"Connection test error: {e}"})
+
+    if ok:
+        _patch_state({"quotex_connected": True, "alert": None})
+        socketio.emit("connection_update", {"quotex": True})
+        return jsonify({"success": True})
+    else:
+        _patch_state({"quotex_connected": False})
+        return jsonify({"success": False, "message": msg})
 
 
 @app.route("/api/quotex/disconnect", methods=["POST"])

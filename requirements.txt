@@ -26,3 +26,7 @@ pytz
 # Browser TLS fingerprint for the Quotex WebSocket. Without it Cloudflare
 # rejects the handshake with HTTP 403 and the bot cannot trade at all.
 curl_cffi>=0.13.0
+
+# Browser session authenticator for Cloudflare Turnstile bypass on login
+undetected-chromedriver
+selenium
