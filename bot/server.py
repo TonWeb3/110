@@ -840,6 +840,18 @@ def quotex_session_import():
     cookies = (data.get("cookies") or "").strip()
     token = (data.get("token") or "").strip()
 
+    # Clean up token if user copied "Token: <val>" or quotes from console output
+    if ":" in token:
+        parts = token.split(":", 1)
+        if parts[0].strip().lower() in ("token", "ssid"):
+            token = parts[1].strip()
+    token = token.strip('"\' \t\r\n')
+
+    # Clean up cookies if user copied "Cookies: <val>" or quotes from console output
+    if cookies.lower().startswith("cookies:"):
+        cookies = cookies.split(":", 1)[1].strip()
+    cookies = cookies.strip('"\' \t\r\n')
+
     if not email or not cookies or not token:
         return jsonify({"success": False, "message": "Email, cookies, and token are required."}), 400
 
@@ -864,12 +876,13 @@ def quotex_session_import():
         if await handler.connect():
             _shared_quotex = handler
             return True, ""
+        err = getattr(handler, "last_error", None) or "Session invalid or rejected by Quotex."
         await handler.disconnect()
         _shared_quotex = None
-        return False, getattr(handler, "last_error", "Session invalid or rejected by Quotex.")
+        return False, err
 
     try:
-        ok, msg = run_sync(_test(), timeout=30)
+        ok, msg = run_sync(_test(), timeout=45)
     except Exception as e:
         return jsonify({"success": False, "message": f"Connection test error: {e}"})
 

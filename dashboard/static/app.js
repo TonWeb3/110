@@ -518,9 +518,20 @@ $('btn-qx-show-manual')?.addEventListener('click', () => {
 
 // Handle manual session import (cookies + token)
 $('btn-qx-save-manual')?.addEventListener('click', async () => {
-  const email   = ($('qx-man-email')?.value || '').trim();
-  const token   = ($('qx-man-token')?.value || '').trim();
-  const cookies = ($('qx-man-cookies')?.value || '').trim();
+  let email   = ($('qx-man-email')?.value || '').trim();
+  let token   = ($('qx-man-token')?.value || '').trim();
+  let cookies = ($('qx-man-cookies')?.value || '').trim();
+
+  // Strip console log prefixes if pasted with "Token: ..." or "Cookies: ..."
+  if (token.toLowerCase().startsWith('token:')) {
+    token = token.substring(6).trim();
+  }
+  token = token.replace(/^["']|["']$/g, '').trim();
+
+  if (cookies.toLowerCase().startsWith('cookies:')) {
+    cookies = cookies.substring(8).trim();
+  }
+  cookies = cookies.replace(/^["']|["']$/g, '').trim();
 
   if (!email)   { showFieldError('qx-man-email',   'Enter your Quotex email'); return; }
   if (!token)   { showFieldError('qx-man-token',   'Enter your session token (SSID)'); return; }

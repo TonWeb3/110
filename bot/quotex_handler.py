@@ -50,6 +50,27 @@ def _patch_pyquotex_login():
     Login.__init__ = _new_init
     Login._qx_host_patched = True
 
+    # Patch pyquotex Quotex._check_connect: the default 2-second timeout is too short for
+    # Cloudflare TLS handshakes + WebSocket SSID authorization, causing premature timeouts
+    # that wipe the session token.
+    if Quotex is not None and not getattr(Quotex, "_qx_connect_patched", False):
+        @staticmethod
+        async def _patient_check_connect(state):
+            from pyquotex._api._waits import wait_until
+            from pyquotex.global_value import AuthStatus
+            try:
+                await wait_until(
+                    lambda: state.auth_status == AuthStatus.AUTHENTICATED,
+                    timeout=10,
+                    poll_interval=0.1,
+                )
+                return True
+            except asyncio.TimeoutError:
+                return state.auth_status == AuthStatus.AUTHENTICATED
+
+        Quotex._check_connect = _patient_check_connect
+        Quotex._qx_connect_patched = True
+
 _patch_pyquotex_login()
 
 # Route the WebSocket through a real browser TLS fingerprint. Without this
@@ -109,21 +130,37 @@ class QuotexHandler:
         email    = os.getenv("QUOTEX_EMAIL")    or self.config.quotex.email
         password = os.getenv("QUOTEX_PASSWORD") or self.config.quotex.password
 
-        if not email or not password:
-            self.logger.error(
-                "Quotex credentials missing. "
-                "Enter them in Settings → Quotex Account, or set "
-                "QUOTEX_EMAIL / QUOTEX_PASSWORD environment variables."
+        # Check if an existing session token is cached in session.json for this email
+        has_session_token = False
+        try:
+            import json as _json
+            from pathlib import Path as _Path
+            _sf = _Path("session.json")
+            if _sf.exists():
+                _sdata = _json.loads(_sf.read_text(encoding="utf-8"))
+                if email in _sdata and _sdata[email].get("token"):
+                    has_session_token = True
+        except Exception:
+            pass
+
+        if not email:
+            self.last_error = "Quotex email is required."
+            self.logger.error(self.last_error)
+            return False
+
+        if not password and not has_session_token:
+            self.last_error = (
+                "Quotex credentials missing. Enter email and password in Settings, "
+                "or import session cookies & token directly."
             )
+            self.logger.error(self.last_error)
             return False
 
         # Must be installed before any socket is opened, or Cloudflare 403s the
         # handshake and every later step (auth, orders, balance) fails with it.
         if not cf_transport.install():
-            self.logger.error(
-                "Cannot open a Quotex WebSocket without curl_cffi — "
-                "run:  pip install curl_cffi"
-            )
+            self.last_error = "Cannot open a Quotex WebSocket without curl_cffi — run: pip install curl_cffi"
+            self.logger.error(self.last_error)
             return False
 
         try:
@@ -138,14 +175,13 @@ class QuotexHandler:
             self.logger.info(f"Connecting to Quotex as {email} (host={host})...")
             self.client = Quotex(
                 email=email,
-                password=password,
+                password=password or "",
                 host=host,
                 on_otp_callback=otp_callback,
             )
             check, reason = await self.client.connect()
 
             if not check:
-                # pyquotex's _check_connect has a short (2 s) timeout — WS auth may arrive later.
                 self.logger.info("Waiting up to 8 s for WebSocket auth to settle...")
                 for _ in range(8):
                     await asyncio.sleep(1)
@@ -155,6 +191,14 @@ class QuotexHandler:
 
             if not check:
                 # Direct HTTP login or cached token failed.
+                if not password:
+                    self.last_error = (
+                        "The imported session token was rejected by Quotex. "
+                        "Please export a fresh token from your browser, or enter your password."
+                    )
+                    self.logger.error(self.last_error)
+                    return False
+
                 # Launch the browser authenticator (undetected_chromedriver) to solve Cloudflare Turnstile,
                 # grab the fresh session cookies and token, and save to session.json.
                 self.logger.info(
@@ -783,34 +827,35 @@ class QuotexHandler:
 
     async def _read_balance(self, authoritative: bool = False) -> Optional[float]:
         """
-        Current account balance.
-
-        pyquotex's get_balance() returns a CACHED figure (api.account_balance,
-        only refreshed when the server pushes a balance message) plus the profit
-        of the open trade. Measured: it can stay frozen at the login value for a
-        whole session even after ten settled trades — which would leave
-        daily_pnl at 0.00 and stop max_daily_loss from ever firing.
-
-        authoritative=True re-reads it over HTTP (/api/v1/cabinets/digest via
-        get_profile), which always reflects settled trades. Use it off the
-        critical path — after settlement and from the idle monitor — and keep
-        the cached read for the pre-trade gate, where latency matters.
+        Current account balance from the authenticated Quotex connection.
+        Prioritizes the live WebSocket account balance which is event-driven.
+        If an authoritative profile read is requested, validates that the profile
+        was actually returned by Quotex (profile_id is set) before trusting it.
         """
-        if authoritative:
+        if authoritative and self.client:
             try:
                 profile = await self.client.get_profile()
-                if profile is not None:
+                # Profile is only valid if Quotex actually returned profile data (profile_id is set).
+                # If the HTTP endpoint returned 401 Unauthenticated, profile_id is None and
+                # balances default to 0.0 — which must NEVER be accepted as a real balance!
+                if profile is not None and getattr(profile, "profile_id", None) is not None:
                     live = self.config.trading.account_type.lower() == "live"
                     value = profile.live_balance if live else profile.demo_balance
-                    if value is not None:
+                    if value is not None and float(value) >= 0:
                         return float(value)
             except Exception as e:
                 self.logger.debug(f"Authoritative balance read failed: {e}")
+
+        # Live WebSocket balance — always connected and updated by Quotex
         try:
-            return await self.client.get_balance()
+            if self.client:
+                bal = await self.client.get_balance()
+                if bal is not None:
+                    return float(bal)
         except Exception as e:
-            self.logger.warning(f"Could not read balance: {e}")
-            return None
+            self.logger.warning(f"Could not read balance from WebSocket: {e}")
+
+        return None
 
     async def _refresh_balance_stats(self, authoritative: bool = False):
         """
@@ -824,6 +869,15 @@ class QuotexHandler:
         balance = await self._read_balance(authoritative=authoritative)
         if balance is None:
             return
+
+        # Sanity check: if opening balance is already established (> 0) and balance suddenly reads 0.0,
+        # ignore the suspicious zero read to prevent falsely wiping the balance and triggering max_daily_loss.
+        if balance == 0.0 and self._day_start_balance is not None and self._day_start_balance > 0.0:
+            self.logger.warning(
+                f"Ignored suspicious $0.00 balance read (opening baseline is ${self._day_start_balance:.2f})."
+            )
+            return
+
         self.balance = balance
         if self._day_start_balance is None:
             # First reading of the day — this is the figure every daily limit is
